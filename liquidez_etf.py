@@ -1,6 +1,5 @@
 import streamlit as st
 import pandas as pd
-import plotly.express as px
 import plotly.graph_objects as go
 import re
 
@@ -9,8 +8,8 @@ st.set_page_config(page_title="Analisador de Liquidez ETF", layout="wide")
 
 st.title("📊 Monitor de Liquidez de ETFs")
 st.markdown("""
-Este app analisa a liquidez histórica de ativos baseada em planilhas de volume.
-Faça o upload do CSV para começar.
+Este app analisa a liquidez histórica de ativos.
+Faça o upload do arquivo (CSV ou XML) para começar.
 """)
 
 # --- FUNÇÕES AUXILIARES ---
@@ -20,11 +19,12 @@ def extract_ticker(col_name):
     Tenta extrair um ticker (ex: BOVA11) de uma string suja.
     Procura por 4 letras seguidas de 1 ou 2 números.
     """
-    if col_name.strip().lower() == 'data':
+    if str(col_name).strip().lower() == 'data':
         return 'Data'
     
     # Regex para encontrar padrão XXXX11 ou XXXX3
-    match = re.search(r'([A-Z]{4}\d{1,2})', col_name)
+    # Convertemos para string pois XML as vezes traz nomes como objetos
+    match = re.search(r'([A-Z]{4}\d{1,2})', str(col_name))
     if match:
         return match.group(1)
     return col_name
@@ -32,27 +32,46 @@ def extract_ticker(col_name):
 @st.cache_data
 def load_data(uploaded_file):
     try:
-        # Lê o CSV
-        df = pd.read_csv(uploaded_file)
-        
-        # Limpeza dos nomes das colunas
-        df.columns = [extract_ticker(c) for c in df.columns]
-        
-        # Converte Data
-        if 'Data' in df.columns:
-            df['Data'] = pd.to_datetime(df['Data'])
-            df = df.sort_values('Data')
-        
-        return df
+        df = None
+        # Verifica a extensão do arquivo para decidir como ler
+        if uploaded_file.name.lower().endswith('.csv'):
+            # Tenta ler CSV (padrão vírgula ou ponto-e-vírgula)
+            try:
+                df = pd.read_csv(uploaded_file)
+            except:
+                uploaded_file.seek(0)
+                df = pd.read_csv(uploaded_file, sep=';')
+                
+        elif uploaded_file.name.lower().endswith('.xml'):
+            # PROTOCOLO VONDER: Tenta ler o XML no formato tabular padrão.
+            # Se o XML for muito aninhado (árvore complexa), isso pode falhar sem um parser específico.
+            df = pd.read_xml(uploaded_file)
+            
+        if df is not None:
+            # Limpeza dos nomes das colunas
+            df.columns = [extract_ticker(c) for c in df.columns]
+            
+            # Converte Data (assume que existe uma coluna que virou 'Data' após a limpeza)
+            if 'Data' in df.columns:
+                df['Data'] = pd.to_datetime(df['Data'])
+                df = df.sort_values('Data')
+            else:
+                st.error("Não encontrei uma coluna de data válida. Verifique o cabeçalho do arquivo.")
+                return None
+            
+            return df
+            
     except Exception as e:
-        st.error(f"Erro ao processar o arquivo: {e}")
+        st.error(f"Erro no processamento (Protocolo Vonder - Falha de Leitura): {e}")
         return None
+    return None
 
 # --- SIDEBAR ---
 
 with st.sidebar:
     st.header("Upload de Dados")
-    uploaded_file = st.file_uploader("Arraste sua planilha aqui (CSV)", type=["csv"])
+    # ATUALIZADO: Agora aceita csv e xml
+    uploaded_file = st.file_uploader("Arraste sua planilha aqui", type=["csv", "xml"])
     
     st.markdown("---")
     mode = st.radio("Modo de Análise", ["Análise Individual", "Duelo de Liquidez"])
@@ -66,7 +85,10 @@ if uploaded_file is not None:
         # Identificar colunas de ativos (excluindo a coluna Data)
         ativos = [c for c in df.columns if c != 'Data']
         
-        if mode == "Análise Individual":
+        if not ativos:
+            st.warning("Não consegui identificar nenhum Ticker (ex: BOVA11) nas colunas. Verifique o arquivo.")
+        
+        elif mode == "Análise Individual":
             st.subheader("🔍 Análise de Ativo Único")
             
             selected_asset = st.selectbox("Selecione o Ativo:", ativos)
@@ -89,13 +111,12 @@ if uploaded_file is not None:
                 col3.metric("Mediana", f"R$ {mediana:,.2f}")
                 col4.metric("Desvio Padrão", f"R$ {desvio:,.2f}")
                 
-                st.info(f"**Razão Média/Mediana:** {ratio:.2f} (Quanto mais próximo de 1, mais constante é a liquidez. Valores muito altos indicam distorção por dias atípicos de alto volume).")
+                st.info(f"**Razão Média/Mediana:** {ratio:.2f} (Quanto mais próximo de 1, mais constante é a liquidez).")
                 
-                # Gráfico de Dispersão (Série Temporal com Linhas de Referência)
+                # Gráfico de Dispersão
                 st.markdown("### Dispersão de Volume (Média vs Mediana)")
                 fig = go.Figure()
                 
-                # Linha do Volume
                 fig.add_trace(go.Bar(
                     x=df['Data'], 
                     y=df[selected_asset], 
@@ -103,7 +124,6 @@ if uploaded_file is not None:
                     marker_color='lightblue'
                 ))
                 
-                # Linha da Média
                 fig.add_trace(go.Scatter(
                     x=df['Data'], 
                     y=[media]*len(df), 
@@ -112,7 +132,6 @@ if uploaded_file is not None:
                     line=dict(color='red', dash='dash')
                 ))
                 
-                # Linha da Mediana
                 fig.add_trace(go.Scatter(
                     x=df['Data'], 
                     y=[mediana]*len(df), 
@@ -142,7 +161,6 @@ if uploaded_file is not None:
                 if asset1 == asset2:
                     st.warning("Selecione dois ativos diferentes para o duelo.")
                 else:
-                    # Comparativo de Métricas
                     m1 = df[asset1].mean()
                     m2 = df[asset2].mean()
                     med1 = df[asset1].median()
@@ -155,7 +173,6 @@ if uploaded_file is not None:
                     }
                     st.table(pd.DataFrame(comp_data))
                     
-                    # Gráfico Comparativo
                     st.markdown("### Comparativo Visual")
                     fig_duel = go.Figure()
                     
@@ -176,4 +193,4 @@ if uploaded_file is not None:
                     st.plotly_chart(fig_duel, use_container_width=True)
                     
 else:
-    st.info("Aguardando upload do arquivo CSV.")
+    st.info("Aguardando upload do arquivo (CSV ou XML).")
