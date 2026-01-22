@@ -81,7 +81,7 @@ if uploaded_file is not None:
             if selected_asset:
                 series = df[selected_asset]
                 
-                # Cálculos Solicitados
+                # Cálculos
                 media = series.mean()
                 mediana = series.median()
                 vol_max = series.max()
@@ -101,7 +101,7 @@ if uploaded_file is not None:
                 g1, g2 = st.columns(2)
                 
                 with g1:
-                    # Gráfico 1: Estrutura (Média vs Mediana)
+                    # Gráfico 1: Estrutura
                     fig_struct = go.Figure()
                     fig_struct.add_trace(go.Bar(
                         x=['Média', 'Mediana'],
@@ -116,10 +116,9 @@ if uploaded_file is not None:
                         template="plotly_white"
                     )
                     st.plotly_chart(fig_struct, use_container_width=True)
-                    st.caption(f"Se a barra VERMELHA (Média) for muito maior que a VERDE, a liquidez é inflada por dias atípicos.")
 
                 with g2:
-                    # Gráfico 2: Extremos (Min vs Máx)
+                    # Gráfico 2: Extremos
                     fig_ext = go.Figure()
                     fig_ext.add_trace(go.Bar(
                         x=['Mínimo Dia', 'Máximo Dia'],
@@ -134,7 +133,6 @@ if uploaded_file is not None:
                         template="plotly_white"
                     )
                     st.plotly_chart(fig_ext, use_container_width=True)
-                    st.caption("O 'Pior Dia' (Laranja) representa sua liquidez real em momentos de crise.")
 
         # --- MODO 2: DUELO ---
         elif mode == "Duelo de Liquidez":
@@ -148,8 +146,10 @@ if uploaded_file is not None:
                 # Cálculos
                 m1, m2 = df[a1].mean(), df[a2].mean()
                 med1, med2 = df[a1].median(), df[a2].median()
+                ratio1 = m1 / med1 if med1 > 0 else 0
+                ratio2 = m2 / med2 if med2 > 0 else 0
                 
-                # Insights de Comparação
+                # Insight de Texto
                 fator = m1 / m2 if m2 > 0 else 0
                 if fator >= 1:
                     texto_insight = f"💎 **{a1}** é **{fator:.1f} vezes** mais líquido que {a2} (na média)."
@@ -160,44 +160,66 @@ if uploaded_file is not None:
                 
                 # Tabela Resumo
                 comp_data = {
-                    "Métrica": ["Volume Médio", "Volume Mediano", "Pior Dia (Min)", "Melhor Dia (Máx)"],
-                    a1: [f"R$ {m1:,.2f}", f"R$ {med1:,.2f}", f"R$ {df[a1].min():,.2f}", f"R$ {df[a1].max():,.2f}"],
-                    a2: [f"R$ {m2:,.2f}", f"R$ {med2:,.2f}", f"R$ {df[a2].min():,.2f}", f"R$ {df[a2].max():,.2f}"]
+                    "Métrica": ["Volume Médio", "Volume Mediano", "Razão Média/Mediana", "Pior Dia"],
+                    a1: [f"R$ {m1:,.2f}", f"R$ {med1:,.2f}", f"{ratio1:.2f}x", f"R$ {df[a1].min():,.2f}"],
+                    a2: [f"R$ {m2:,.2f}", f"R$ {med2:,.2f}", f"{ratio2:.2f}x", f"R$ {df[a2].min():,.2f}"]
                 }
                 st.table(pd.DataFrame(comp_data))
                 
-                # Gráfico Comparativo Agrupado
-                fig_duel = go.Figure()
+                # --- GRÁFICOS DO DUELO ---
                 
-                # Barras do Ativo A
-                fig_duel.add_trace(go.Bar(
-                    name=a1,
-                    x=['Média', 'Mediana'],
-                    y=[m1, med1],
-                    text=[f'{m1/1e6:.1f}M', f'{med1/1e6:.1f}M'],
-                    textposition='auto',
-                    marker_color='#1f77b4'
-                ))
+                # Colunas para separar Volume Absoluto de Consistência
+                d_col1, d_col2 = st.columns(2)
                 
-                # Barras do Ativo B
-                fig_duel.add_trace(go.Bar(
-                    name=a2,
-                    x=['Média', 'Mediana'],
-                    y=[m2, med2],
-                    text=[f'{m2/1e6:.1f}M', f'{med2/1e6:.1f}M'],
-                    textposition='auto',
-                    marker_color='#ff7f0e'
-                ))
+                with d_col1:
+                    # Gráfico 1: Volume Absoluto
+                    fig_duel = go.Figure()
+                    fig_duel.add_trace(go.Bar(
+                        name=a1, x=['Média', 'Mediana'], y=[m1, med1],
+                        text=[f'{m1/1e6:.1f}M', f'{med1/1e6:.1f}M'],
+                        textposition='auto', marker_color='#1f77b4'
+                    ))
+                    fig_duel.add_trace(go.Bar(
+                        name=a2, x=['Média', 'Mediana'], y=[m2, med2],
+                        text=[f'{m2/1e6:.1f}M', f'{med2/1e6:.1f}M'],
+                        textposition='auto', marker_color='#ff7f0e'
+                    ))
+                    fig_duel.update_layout(
+                        title="Quem entrega mais volume?",
+                        barmode='group',
+                        template="plotly_white"
+                    )
+                    st.plotly_chart(fig_duel, use_container_width=True)
                 
-                fig_duel.update_layout(
-                    title="Comparativo Direto: Quem entrega mais liquidez?",
-                    barmode='group',
-                    yaxis_title="Volume (R$)",
-                    template="plotly_white"
-                )
-                
-                st.plotly_chart(fig_duel, use_container_width=True)
-                st.caption("Valores nos rótulos abreviados em Milhões (M) para facilitar leitura.")
+                with d_col2:
+                    # Gráfico 2: Consistência (Média / Mediana) - O NOVO PEDIDO
+                    fig_ratio = go.Figure()
+                    
+                    # Barras de Ratio
+                    fig_ratio.add_trace(go.Bar(
+                        x=[a1, a2],
+                        y=[ratio1, ratio2],
+                        text=[f'{ratio1:.2f}x', f'{ratio2:.2f}x'],
+                        textposition='auto',
+                        marker_color=['#1f77b4', '#ff7f0e']
+                    ))
+                    
+                    # Linha de Referência (Ideal = 1.0)
+                    fig_ratio.add_shape(
+                        type="line",
+                        x0=-0.5, x1=1.5,
+                        y0=1, y1=1,
+                        line=dict(color="Red", width=2, dash="dash"),
+                    )
+                    
+                    fig_ratio.update_layout(
+                        title="Quem é mais consistente? (Ideal = 1.0)",
+                        yaxis_title="Razão Média / Mediana",
+                        template="plotly_white",
+                        hovermode="x unified"
+                    )
+                    st.plotly_chart(fig_ratio, use_container_width=True)
+                    st.caption("Quanto mais alta a barra, mais distorcida é a liquidez (muitos dias vazios e poucos dias gigantes). O ideal é próximo de 1.0 (linha vermelha).")
 
 else:
     st.info("Aguardando upload...")
