@@ -93,7 +93,7 @@ if uploaded_file is not None:
                 c1.metric("Volume Médio", f"R$ {media:,.2f}")
                 c2.metric("Volume Mediano", f"R$ {mediana:,.2f}")
                 c3.metric("Razão Média/Mediana", f"{ratio:.2f}x")
-                c4.metric("Extremos (Min/Máx)", f"R$ {vol_min:,.0f} / R$ {vol_max:,.0f}")
+                c4.metric("Extremos (Min/Máx)", f"{vol_min:,.0f} / {vol_max:,.0f}")
                 
                 st.markdown("---")
                 
