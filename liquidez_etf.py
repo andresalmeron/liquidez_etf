@@ -33,31 +33,53 @@ def extract_ticker(col_name):
 def load_data(uploaded_file):
     try:
         df = None
-        # Verifica a extensão do arquivo para decidir como ler
-        if uploaded_file.name.lower().endswith('.csv'):
-            # Tenta ler CSV (padrão vírgula ou ponto-e-vírgula)
+        file_name = uploaded_file.name.lower()
+
+        # BLOCO 1: Tratamento de EXCEL (Novo)
+        if file_name.endswith('.xlsx'):
+            # engine='openpyxl' é essencial para ler xlsx modernos
+            df = pd.read_excel(uploaded_file, engine='openpyxl')
+            
+        # BLOCO 2: Tratamento de CSV
+        elif file_name.endswith('.csv'):
             try:
                 df = pd.read_csv(uploaded_file)
             except:
                 uploaded_file.seek(0)
                 df = pd.read_csv(uploaded_file, sep=';')
-                
-        elif uploaded_file.name.lower().endswith('.xml'):
-            # PROTOCOLO VONDER: Tenta ler o XML no formato tabular padrão.
-            # Se o XML for muito aninhado (árvore complexa), isso pode falhar sem um parser específico.
+        
+        # BLOCO 3: Tratamento de XML
+        elif file_name.endswith('.xml'):
             df = pd.read_xml(uploaded_file)
             
         if df is not None:
-            # Limpeza dos nomes das colunas
+            # Limpeza dos nomes das colunas (Resolve os nomes sujos da Comdinheiro)
             df.columns = [extract_ticker(c) for c in df.columns]
             
-            # Converte Data (assume que existe uma coluna que virou 'Data' após a limpeza)
+            # Converte Data
             if 'Data' in df.columns:
                 df['Data'] = pd.to_datetime(df['Data'])
                 df = df.sort_values('Data')
             else:
-                st.error("Não encontrei uma coluna de data válida. Verifique o cabeçalho do arquivo.")
+                st.error("Não encontrei a coluna 'Data'. Verifique se o cabeçalho do Excel está na primeira linha.")
                 return None
+            
+            return df
+            
+    except Exception as e:
+        st.error(f"Erro ao processar o arquivo (Protocolo Vonder): {e}")
+        return None
+    return None
+
+# --- SIDEBAR ---
+
+with st.sidebar:
+    st.header("Upload de Dados")
+    # ATUALIZADO: Adicionado 'xlsx' na lista de tipos aceitos
+    uploaded_file = st.file_uploader("Arraste sua planilha (XLSX, CSV, XML)", type=["xlsx", "csv", "xml"])
+    
+    st.markdown("---")
+    mode = st.radio("Modo de Análise", ["Análise Individual", "Duelo de Liquidez"])
             
             return df
             
